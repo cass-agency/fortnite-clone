@@ -6,6 +6,7 @@ import { RemotePlayerManager } from './game/RemotePlayer.js';
 import { Weapon } from './game/Weapon.js';
 import { Builder } from './game/Builder.js';
 import { HUD } from './game/HUD.js';
+import { ThirdPersonCamera } from './game/ThirdPersonCamera.js';
 
 // ─── Scene Setup ─────────────────────────────────────────────────────────────
 
@@ -14,7 +15,7 @@ const canvas = document.getElementById('game-canvas');
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: true,
-  powerPreference: 'high-performance'
+  powerPreference: 'high-performance',
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -27,7 +28,6 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.Fog(0x87ceeb, 80, 300);
 
-// Camera
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
 // Lighting
@@ -59,6 +59,8 @@ const socket = io();
 const world = new World(scene);
 const hud = new HUD();
 const remotePlayerManager = new RemotePlayerManager(scene);
+const thirdPersonCamera = new ThirdPersonCamera(camera);
+
 let player = null;
 let weapon = null;
 let builder = null;
@@ -75,19 +77,25 @@ socket.on('init', (data) => {
   localPlayerColor = data.color;
   localPlayerName = data.name;
 
-  // Add existing players
   for (const p of data.players) {
-    if (p.id !== localPlayerId) {
-      remotePlayerManager.addPlayer(p);
-    }
+    if (p.id !== localPlayerId) remotePlayerManager.addPlayer(p);
   }
 
-  // Place existing blocks
-  for (const block of data.placedBlocks) {
+  // Legacy terrain blocks
+  for (const block of data.placedBlocks || []) {
     world.addBlock(block.x, block.y, block.z, block.color);
   }
 
-  // Init storm
+  // Building blocks (from previous sessions)
+  for (const block of data.buildBlocks || []) {
+    if (builder) builder.onBlockPlaced(block);
+  }
+
+  // Weapon chests
+  for (const chest of data.weaponChests || []) {
+    world.spawnChest(chest);
+  }
+
   world.updateStorm(data.storm);
   hud.updateStorm(data.storm);
 
@@ -118,10 +126,7 @@ socket.on('hit', (data) => {
     player.takeDamage(data.damage);
     hud.updateHealth(player.health);
     hud.showHitFlash();
-
-    if (player.health <= 0) {
-      showDeathScreen();
-    }
+    if (player.health <= 0) showDeathScreen();
   }
 });
 
@@ -130,10 +135,7 @@ socket.on('stormDamage', (data) => {
     player.health = data.health;
     hud.updateHealth(player.health);
     hud.showDamageWarning(true);
-
-    if (player.health <= 0) {
-      showDeathScreen();
-    }
+    if (player.health <= 0) showDeathScreen();
   }
 });
 
@@ -145,15 +147,44 @@ socket.on('stormUpdate', (data) => {
 socket.on('playerDied', (data) => {
   remotePlayerManager.markDead(data.deadId);
   hud.addKillMessage(data.message, '#e74c3c');
-  hud.updatePlayerCount(Object.keys(remotePlayerManager.getAlivePlayers()).length + (player && player.health > 0 ? 1 : 0));
+  hud.updatePlayerCount(
+    Object.keys(remotePlayerManager.getAlivePlayers()).length + (player && player.health > 0 ? 1 : 0)
+  );
 });
 
 socket.on('playerRespawned', (data) => {
   remotePlayerManager.markAlive(data.id, data.position);
 });
 
+// Legacy block placement (terrain)
 socket.on('blockPlaced', (data) => {
   world.addBlock(data.x, data.y, data.z, data.color);
+});
+
+// New building block events
+socket.on('buildBlockPlaced', (data) => {
+  if (builder) builder.onBlockPlaced(data);
+});
+
+socket.on('blockDamaged', (data) => {
+  if (builder) builder.onBlockDamaged(data);
+});
+
+socket.on('blockDestroyed', (data) => {
+  if (builder) builder.onBlockDamaged({ ...data, hp: 0 });
+});
+
+// Weapon chests
+socket.on('chestSpawned', (data) => {
+  world.spawnChest(data);
+});
+
+socket.on('chestRemoved', (data) => {
+  world.removeChest(data.id);
+});
+
+socket.on('weaponPickedUp', (data) => {
+  if (weapon) weapon.equipWeapon(data.weaponType);
 });
 
 socket.on('hitEffect', (data) => {
@@ -161,7 +192,6 @@ socket.on('hitEffect', (data) => {
 });
 
 socket.on('playerShot', (data) => {
-  // Visual shot trail from remote players
   world.createShotTrail(scene, data.origin, data.direction);
 });
 
@@ -181,12 +211,10 @@ function startGame() {
   gameStarted = true;
   document.getElementById('start-screen').style.display = 'none';
 
-  // Create player after we have color info (or use default)
   player = new Player(scene, camera, localPlayerColor || '#4d96ff');
   weapon = new Weapon(scene, camera, player, socket, remotePlayerManager, hud);
   builder = new Builder(scene, player, socket, world, hud);
 
-  // Request pointer lock
   canvas.requestPointerLock();
 
   hud.updateHealth(player.health);
@@ -203,7 +231,6 @@ function showDeathScreen() {
   document.getElementById('death-screen').style.display = 'flex';
 }
 
-// Pointer lock handling
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === canvas;
   if (player) player.isPointerLocked = locked;
@@ -229,52 +256,57 @@ const clock = new THREE.Clock();
 let lastNetworkUpdate = 0;
 const NETWORK_UPDATE_RATE = 1 / 20; // 20 Hz
 
+const PICKUP_RADIUS = 2.5;
+
 function gameLoop() {
   requestAnimationFrame(gameLoop);
 
-  const delta = clock.getDelta();
+  const delta   = clock.getDelta();
   const elapsed = clock.getElapsedTime();
 
   if (gameStarted && player) {
-    // Update player
     player.update(delta, world);
-
-    // Update weapon
     weapon.update(delta);
-
-    // Update builder
     builder.update();
 
-    // Network: send position updates at 20Hz
+    // Third-person camera
+    thirdPersonCamera.update(
+      player.position,
+      player.yaw,
+      player.pitch,
+      world.getCollidableMeshes()
+    );
+
+    // Network: send position at 20 Hz
     lastNetworkUpdate += delta;
     if (lastNetworkUpdate >= NETWORK_UPDATE_RATE) {
       lastNetworkUpdate = 0;
       socket.emit('playerUpdate', {
-        position: {
-          x: player.position.x,
-          y: player.position.y,
-          z: player.position.z
-        },
-        rotation: {
-          y: player.yaw
-        }
+        position: { x: player.position.x, y: player.position.y, z: player.position.z },
+        rotation: { y: player.yaw },
       });
     }
 
-    // Check storm damage indication
+    // Storm damage indicator
     const dx = player.position.x - world.stormCenterX;
     const dz = player.position.z - world.stormCenterZ;
-    const distFromCenter = Math.sqrt(dx * dx + dz * dz);
-    hud.showDamageWarning(distFromCenter > world.stormRadius);
+    hud.showDamageWarning(Math.sqrt(dx * dx + dz * dz) > world.stormRadius);
+
+    // Weapon chest proximity pickup (E key or auto-pickup when very close)
+    for (const [id, chestGroup] of world.getChests()) {
+      const cp = chestGroup.position;
+      const cdx = player.position.x - cp.x;
+      const cdz = player.position.z - cp.z;
+      if (Math.sqrt(cdx * cdx + cdz * cdz) < PICKUP_RADIUS) {
+        socket.emit('pickupChest', { id });
+        world.removeChest(id);
+        break; // only one per frame
+      }
+    }
   }
 
-  // Update remote players
   remotePlayerManager.update(delta, elapsed);
-
-  // Update world
   world.update(elapsed);
-
-  // Render
   renderer.render(scene, camera);
 }
 
