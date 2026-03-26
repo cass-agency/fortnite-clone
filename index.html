@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voxel Battle Royale</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #1a1a2e;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #game-canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* Crosshair */
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px;
+      height: 20px;
+    }
+
+    #crosshair::before,
+    #crosshair::after {
+      content: '';
+      position: absolute;
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    #crosshair::before {
+      width: 2px;
+      height: 20px;
+      left: 9px;
+      top: 0;
+    }
+
+    #crosshair::after {
+      width: 20px;
+      height: 2px;
+      left: 0;
+      top: 9px;
+    }
+
+    /* Health bar */
+    #health-container {
+      position: absolute;
+      bottom: 30px;
+      left: 30px;
+      width: 250px;
+    }
+
+    #health-label {
+      color: #fff;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    #health-bar-bg {
+      width: 100%;
+      height: 20px;
+      background: rgba(0,0,0,0.5);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    #health-bar {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #e74c3c, #c0392b);
+      border-radius: 8px;
+      transition: width 0.3s ease;
+    }
+
+    #health-bar.high {
+      background: linear-gradient(90deg, #2ecc71, #27ae60);
+    }
+
+    #health-bar.medium {
+      background: linear-gradient(90deg, #f39c12, #e67e22);
+    }
+
+    #health-value {
+      color: #fff;
+      font-size: 12px;
+      text-align: right;
+      margin-top: 3px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    /* Storm indicator */
+    #storm-container {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      text-align: right;
+    }
+
+    #storm-label {
+      color: #a855f7;
+      font-size: 16px;
+      font-weight: bold;
+      text-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
+      margin-bottom: 5px;
+    }
+
+    #storm-timer {
+      color: #fff;
+      font-size: 14px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    #storm-damage-warning {
+      color: #ff4444;
+      font-size: 14px;
+      font-weight: bold;
+      text-shadow: 0 0 8px rgba(255,68,68,0.8);
+      animation: pulse 0.8s ease-in-out infinite alternate;
+      display: none;
+    }
+
+    /* Player count */
+    #player-count {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #fff;
+      font-size: 18px;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    #player-count-icon {
+      font-size: 20px;
+      margin-right: 5px;
+    }
+
+    /* Mode indicator */
+    #mode-indicator {
+      position: absolute;
+      bottom: 30px;
+      right: 30px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+      background: rgba(0,0,0,0.5);
+      border: 2px solid rgba(255,255,255,0.2);
+      transition: all 0.3s ease;
+    }
+
+    #mode-indicator.build-mode {
+      background: rgba(46, 125, 50, 0.7);
+      border-color: #4caf50;
+      color: #a5d6a7;
+    }
+
+    /* Kill feed */
+    #kill-feed {
+      position: absolute;
+      top: 100px;
+      right: 20px;
+      width: 250px;
+    }
+
+    .kill-message {
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 13px;
+      margin-bottom: 5px;
+      border-left: 3px solid #e74c3c;
+      animation: fadeOut 3s forwards;
+    }
+
+    /* Ammo */
+    #ammo-container {
+      position: absolute;
+      bottom: 80px;
+      right: 30px;
+      text-align: right;
+      color: #fff;
+    }
+
+    #ammo-display {
+      font-size: 28px;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    #ammo-label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* Start screen overlay */
+    #start-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      color: #fff;
+    }
+
+    #start-screen h1 {
+      font-size: 56px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    #start-screen .subtitle {
+      font-size: 18px;
+      color: rgba(255,255,255,0.6);
+      margin-bottom: 40px;
+    }
+
+    #start-screen .controls-list {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 24px 32px;
+      margin-bottom: 32px;
+      min-width: 320px;
+    }
+
+    #start-screen .controls-list h3 {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 16px;
+    }
+
+    #start-screen .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 14px;
+    }
+
+    #start-screen .control-row:last-child {
+      border-bottom: none;
+    }
+
+    .key {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-family: monospace;
+      color: rgba(255,255,255,0.8);
+    }
+
+    #play-btn {
+      background: linear-gradient(135deg, #a855f7, #ec4899);
+      color: #fff;
+      border: none;
+      padding: 16px 48px;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 30px;
+      cursor: pointer;
+      pointer-events: all;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    #play-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 25px rgba(168, 85, 247, 0.5);
+    }
+
+    /* Death screen */
+    #death-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.75);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      color: #fff;
+    }
+
+    #death-screen h2 {
+      font-size: 48px;
+      color: #e74c3c;
+      margin-bottom: 16px;
+    }
+
+    #respawn-btn {
+      background: #2ecc71;
+      color: #fff;
+      border: none;
+      padding: 14px 40px;
+      font-size: 18px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      pointer-events: all;
+      margin-top: 20px;
+      transition: background 0.2s;
+    }
+
+    #respawn-btn:hover {
+      background: #27ae60;
+    }
+
+    /* Hit flash */
+    #hit-flash {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(255, 0, 0, 0);
+      pointer-events: none;
+      z-index: 50;
+      transition: background 0.1s ease;
+    }
+
+    @keyframes pulse {
+      from { opacity: 0.6; }
+      to { opacity: 1; }
+    }
+
+    @keyframes fadeOut {
+      0% { opacity: 1; }
+      70% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    #instructions-pause {
+      position: absolute;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.4);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    #damage-numbers {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .damage-number {
+      position: absolute;
+      color: #ff4444;
+      font-size: 24px;
+      font-weight: bold;
+      text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+      animation: floatUp 1s ease-out forwards;
+    }
+
+    @keyframes floatUp {
+      from { transform: translateY(0); opacity: 1; }
+      to { transform: translateY(-60px); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <!-- Player count -->
+    <div id="player-count">
+      <span id="player-count-icon">👥</span>
+      <span id="player-count-value">1</span> alive
+    </div>
+
+    <!-- Storm -->
+    <div id="storm-container">
+      <div id="storm-label">⚡ STORM</div>
+      <div id="storm-timer">Shrinks in: <span id="storm-countdown">60s</span></div>
+      <div id="storm-damage-warning">STORM DAMAGE!</div>
+    </div>
+
+    <!-- Kill feed -->
+    <div id="kill-feed"></div>
+
+    <!-- Crosshair -->
+    <div id="crosshair"></div>
+
+    <!-- Health -->
+    <div id="health-container">
+      <div id="health-label">❤ HEALTH</div>
+      <div id="health-bar-bg">
+        <div id="health-bar" class="high"></div>
+      </div>
+      <div id="health-value">100 / 100</div>
+    </div>
+
+    <!-- Ammo -->
+    <div id="ammo-container">
+      <div id="ammo-display"><span id="ammo-current">12</span> / <span id="ammo-reserve">∞</span></div>
+      <div id="ammo-label">AMMO</div>
+    </div>
+
+    <!-- Mode -->
+    <div id="mode-indicator">🔫 COMBAT</div>
+
+    <!-- Instructions -->
+    <div id="instructions-pause">ESC to unlock mouse</div>
+  </div>
+
+  <!-- Damage numbers overlay -->
+  <div id="damage-numbers"></div>
+
+  <!-- Hit flash -->
+  <div id="hit-flash"></div>
+
+  <!-- Start Screen -->
+  <div id="start-screen">
+    <h1>VOXEL<br>ROYALE</h1>
+    <p class="subtitle">Last player standing wins</p>
+
+    <div class="controls-list">
+      <h3>Controls</h3>
+      <div class="control-row">
+        <span>Move</span>
+        <span><span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span></span>
+      </div>
+      <div class="control-row">
+        <span>Jump</span>
+        <span><span class="key">Space</span></span>
+      </div>
+      <div class="control-row">
+        <span>Sprint</span>
+        <span><span class="key">Shift</span></span>
+      </div>
+      <div class="control-row">
+        <span>Shoot</span>
+        <span><span class="key">Left Click</span></span>
+      </div>
+      <div class="control-row">
+        <span>Build Mode</span>
+        <span><span class="key">B</span> or <span class="key">Right Click</span></span>
+      </div>
+      <div class="control-row">
+        <span>Place Block</span>
+        <span><span class="key">Left Click</span> (build mode)</span>
+      </div>
+      <div class="control-row">
+        <span>Look Around</span>
+        <span><span class="key">Mouse</span></span>
+      </div>
+    </div>
+
+    <button id="play-btn">PLAY NOW</button>
+  </div>
+
+  <!-- Death Screen -->
+  <div id="death-screen">
+    <h2>YOU DIED</h2>
+    <p>Better luck next time!</p>
+    <button id="respawn-btn">RESPAWN</button>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
