@@ -203,30 +203,43 @@ export class World {
   }
 
   _buildStormZone() {
-    // Storm wall: a large semi-transparent cylinder
+    // Outer storm wall — opaque purple/pink cylinder
     const geometry = new THREE.CylinderGeometry(200, 200, 200, 64, 1, true);
     const material = new THREE.MeshBasicMaterial({
-      color: 0x9b59b6,
+      color: 0xaa44cc,
       transparent: true,
-      opacity: 0.25,
+      opacity: 0.3,
       side: THREE.DoubleSide,
-      depthWrite: false
+      depthWrite: false,
     });
     this.stormWall = new THREE.Mesh(geometry, material);
     this.stormWall.position.set(0, 100, 0);
     this.scene.add(this.stormWall);
 
-    // Storm floor ring (optional ground indicator)
-    const ringGeo = new THREE.RingGeometry(198, 202, 64);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xa855f7,
+    // Inner fog fill — solid purple fog inside the wall (exterior)
+    const fogGeo = new THREE.CylinderGeometry(300, 300, 200, 32, 1, true);
+    const fogMat = new THREE.MeshBasicMaterial({
+      color: 0x880088,
       transparent: true,
-      opacity: 0.6,
-      side: THREE.DoubleSide
+      opacity: 0.18,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    this.stormFog = new THREE.Mesh(fogGeo, fogMat);
+    this.stormFog.position.set(0, 100, 0);
+    this.scene.add(this.stormFog);
+
+    // Storm floor ring
+    const ringGeo = new THREE.RingGeometry(198, 204, 64);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xcc44ff,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
     });
     this.stormRing = new THREE.Mesh(ringGeo, ringMat);
     this.stormRing.rotation.x = -Math.PI / 2;
-    this.stormRing.position.y = 0.1;
+    this.stormRing.position.y = 0.15;
     this.scene.add(this.stormRing);
   }
 
@@ -244,9 +257,20 @@ export class World {
     if (this.stormRing) {
       const r = data.radius;
       this.stormRing.geometry.dispose();
-      this.stormRing.geometry = new THREE.RingGeometry(r - 2, r + 2, 64);
-      this.stormRing.position.set(data.centerX, 0.1, data.centerZ);
+      this.stormRing.geometry = new THREE.RingGeometry(r - 2, r + 4, 64);
+      this.stormRing.position.set(data.centerX, 0.15, data.centerZ);
     }
+  }
+
+  // Called by Builder to register a building block as collidable
+  registerBuildingBlock(mesh) {
+    this.collidableMeshes.push(mesh);
+  }
+
+  // Called by Builder when a block is destroyed
+  unregisterBuildingBlock(mesh) {
+    const idx = this.collidableMeshes.indexOf(mesh);
+    if (idx !== -1) this.collidableMeshes.splice(idx, 1);
   }
 
   addBlock(x, y, z, color) {
@@ -266,6 +290,61 @@ export class World {
     this.collidableMeshes.push(mesh);
 
     return mesh;
+  }
+
+  // ─── Chest spawns ───────────────────────────────────────────────────────────
+
+  spawnChest(data) {
+    const { x, y, z, id, weaponType } = data;
+    const group = new THREE.Group();
+
+    // Chest body
+    const bodyGeo = new THREE.BoxGeometry(0.8, 0.6, 0.5);
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0xb8860b });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    group.add(body);
+
+    // Chest lid
+    const lidGeo = new THREE.BoxGeometry(0.8, 0.25, 0.5);
+    const lidMat = new THREE.MeshLambertMaterial({ color: 0xdaa520 });
+    const lid = new THREE.Mesh(lidGeo, lidMat);
+    lid.position.y = 0.425;
+    group.add(lid);
+
+    // Glow ring
+    const glowGeo = new THREE.RingGeometry(0.5, 0.7, 16);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0xffdd44,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = -0.3;
+    group.add(glow);
+
+    group.position.set(x, y, z);
+    group.name = 'chest';
+    group.userData = { id, weaponType, glow };
+
+    this.scene.add(group);
+    if (!this.chests) this.chests = new Map();
+    this.chests.set(id, group);
+    return group;
+  }
+
+  removeChest(id) {
+    if (!this.chests) return;
+    const group = this.chests.get(id);
+    if (group) {
+      this.scene.remove(group);
+      this.chests.delete(id);
+    }
+  }
+
+  getChests() {
+    return this.chests || new Map();
   }
 
   getCollidableMeshes() {
@@ -326,12 +405,26 @@ export class World {
   }
 
   update(elapsed) {
-    // Pulse storm effect
+    // Pulse storm wall and ring
     if (this.stormWall) {
-      this.stormWall.material.opacity = 0.15 + 0.1 * Math.sin(elapsed * 2);
+      this.stormWall.material.opacity = 0.2 + 0.12 * Math.sin(elapsed * 2.5);
+    }
+    if (this.stormFog) {
+      this.stormFog.material.opacity = 0.12 + 0.06 * Math.sin(elapsed * 1.5);
     }
     if (this.stormRing) {
-      this.stormRing.material.opacity = 0.4 + 0.2 * Math.sin(elapsed * 3);
+      this.stormRing.material.opacity = 0.5 + 0.25 * Math.sin(elapsed * 3);
+    }
+
+    // Animate chest glow rings
+    if (this.chests) {
+      for (const [, group] of this.chests) {
+        const glow = group.userData.glow;
+        if (glow) {
+          glow.material.opacity = 0.4 + 0.35 * Math.sin(elapsed * 4);
+          glow.rotation.z = elapsed * 1.5;
+        }
+      }
     }
   }
 }
