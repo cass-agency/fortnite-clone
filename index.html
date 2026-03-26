@@ -177,9 +177,31 @@
     }
 
     #mode-indicator.build-mode {
-      background: rgba(46, 125, 50, 0.7);
-      border-color: #4caf50;
-      color: #a5d6a7;
+      background: rgba(0, 80, 180, 0.75);
+      border-color: #4488ff;
+      color: #aaccff;
+    }
+
+    #build-mode-detail {
+      position: absolute;
+      bottom: 65px;
+      right: 30px;
+      color: #aaccff;
+      font-size: 13px;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+
+    #pickup-hint {
+      position: absolute;
+      bottom: 140px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ffd93d;
+      font-size: 15px;
+      font-weight: bold;
+      text-shadow: 1px 1px 3px rgba(0,0,0,0.9);
+      display: none;
     }
 
     /* Kill feed */
@@ -449,6 +471,10 @@
 
     <!-- Mode -->
     <div id="mode-indicator">🔫 COMBAT</div>
+    <div id="build-mode-detail"></div>
+
+    <!-- Pickup hint -->
+    <div id="pickup-hint">Walk into chest to pick up weapon</div>
 
     <!-- Instructions -->
     <div id="instructions-pause">ESC to unlock mouse</div>
@@ -484,8 +510,28 @@
         <span><span class="key">Left Click</span></span>
       </div>
       <div class="control-row">
+        <span>Reload</span>
+        <span><span class="key">R</span></span>
+      </div>
+      <div class="control-row">
+        <span>Switch Weapon</span>
+        <span><span class="key">1</span> Pistol <span class="key">2</span> Shotgun <span class="key">3</span> Sniper</span>
+      </div>
+      <div class="control-row">
         <span>Build Mode</span>
         <span><span class="key">B</span> or <span class="key">Right Click</span></span>
+      </div>
+      <div class="control-row">
+        <span>Cycle Piece</span>
+        <span><span class="key">Q</span> (Wall/Floor/Ramp/Pyramid)</span>
+      </div>
+      <div class="control-row">
+        <span>Change Material</span>
+        <span><span class="key">Shift</span> + <span class="key">Scroll</span></span>
+      </div>
+      <div class="control-row">
+        <span>Rotate Piece</span>
+        <span><span class="key">Scroll</span> (build mode)</span>
       </div>
       <div class="control-row">
         <span>Place Block</span>
