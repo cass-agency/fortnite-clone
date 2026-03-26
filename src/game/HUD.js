@@ -83,15 +83,17 @@ export class HUD {
     }
   }
 
-  updateAmmo(ammo) {
+  updateAmmo(ammo, weaponName) {
     this.ammoCurrentEl.textContent = ammo;
     if (ammo === 0) {
       this.ammoCurrentEl.style.color = '#ff4444';
-    } else if (ammo <= 10) {
+    } else if (ammo <= 5) {
       this.ammoCurrentEl.style.color = '#ffd93d';
     } else {
       this.ammoCurrentEl.style.color = '#fff';
     }
+    const labelEl = document.getElementById('ammo-label');
+    if (labelEl && weaponName) labelEl.textContent = weaponName.toUpperCase();
   }
 
   showReloading(show) {
